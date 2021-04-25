@@ -22,7 +22,9 @@ namespace Satrex.GoogleDocs
         static string ApplicationName = "Google Docs Manipulator";
         private static DocsService service;
 
-        private const string MYMETYPE_PDF = "application/pdf";
+        public const string MYMETYPE_PDF = "application/pdf";
+        
+        public static string GOOGLE_MYMETYPE_FOLDER = @"application/vnd.google-apps.folder";
         private static string credentialFilePath = @"Secrets/client_secret.json";
         public static string CredentialFilePath
         {
@@ -104,28 +106,42 @@ namespace Satrex.GoogleDocs
 
             var bodyText = string.Empty;
             foreach(var element in doc.Body.Content){
-                // body.Contentは共用体。
-                // Paragraph, SectionBreak, Table, TableOfContentsの
-                // いずれかひとつが入っている
-                if(element.Paragraph != null){
-                    // paragraphの処理k
-                    bodyText += GetParagraphText(element.Paragraph);
-                } else if (element.SectionBreak != null){
-                    // section breakの処理
-                } else if (element.Table != null){
-                    // Tableの処理
-                } else if (element.TableOfContents != null){
-                    // table of contentsの処理
-                }
+                bodyText += GetContent(element);
             }
             
             return bodyText;
        }
 
-        private static string GetParagraphText(Paragraph paragraph)
+        public static string GetContent(StructuralElement element)
+        {
+            // body.Contentは共用体。
+            // Paragraph, SectionBreak, Table, TableOfContentsの
+            // いずれかひとつが入っている
+            if (element.Paragraph != null)
+            {
+                // paragraphの処理k
+                return GetParagraphText(element.Paragraph);
+            }
+            else if (element.SectionBreak != null)
+            {
+                // section breakの処理
+            }
+            else if (element.Table != null)
+            {
+                // Tableの処理
+            }
+            else if (element.TableOfContents != null)
+            {
+                // table of contentsの処理
+            }
+            return string.Empty;
+        }
+
+        public static string GetParagraphText(Paragraph paragraph)
         {
             string paragraphText = string.Empty;
-
+            if (paragraph == null) return paragraphText;
+            
             foreach(var element in paragraph.Elements)
             {
                 paragraphText += element.TextRun.Content;
@@ -166,6 +182,14 @@ namespace Satrex.GoogleDocs
         }
 
         
+        /// <summary>
+        /// 対象ファイル内の文字列を置換します。
+        /// </summary>
+        /// <param name="document">対象ファイルを指定します。</param>
+        /// <param name="origin">置換される文字列を指定します。</param>
+        /// <param name="changed">置換後の文字列を指定します。</param>
+        /// <param name="isCaseSensitive">大文字小文字を区別する場合はtrue、それ以外はfalseを指定します。</param>
+        /// <returns></returns>
         public static Document ReplaceText(Document document, string origin, string changed, bool isCaseSensitive)
         {
             var req = new BatchUpdateDocumentRequest();
@@ -188,14 +212,30 @@ namespace Satrex.GoogleDocs
 
         public static Document GetDocument(string documentId)
         {
-            Console.WriteLine(System.Reflection.MethodInfo.GetCurrentMethod().Name + " start");
-            DocumentsResource.GetRequest request = Service.Documents.Get(documentId);
-            Document doc = request.Execute();
-            Console.WriteLine("Found {0}", doc.Title);
-            return doc;
+            // Console.WriteLine(System.Reflection.MethodInfo.GetCurrentMethod().Name + " start");
+            // Console.WriteLine($"documentId:{documentId}");
+            try
+            {
+                DocumentsResource.GetRequest request = Service.Documents.Get(documentId);
+                // Console.WriteLine(request.PrettyPrint);
+                Document doc = request.Execute();
+                // Console.WriteLine("Found {0}", doc.Title);
+                return doc;
+            }
+            catch (Google.GoogleApiException ex)
+            {
+                Console.Error.WriteLine("Googleドキュメントが取得できませんでした。MymeTypeを確認してください。");
+                Console.Error.WriteLine($"{ex.GetType().Name} {ex.Message} ");
+                throw ex;
+            }
         }
 
-        // TODO: 指定フォルダ配下のファイル一括取得のメソッドを実装する
+        /// <summary>
+        /// 指定フォルダ配下のファイルすべてに、文字列置換を行います。
+        /// </summary>
+        /// <param name="folderId">最上位のフォルダIDを指定します。</param>
+        /// <param name="origin">置換される文字列を指定します。</param>
+        /// <param name="changed">置換後の文字列を指定します。</param>
         public static void BatchReplace(string folderId, string origin, string changed)
         {
             var files = GoogleDrive.GoogleDriveInternal.ListFiles(folderId);
@@ -203,6 +243,38 @@ namespace Satrex.GoogleDocs
             foreach(var doc in docs)
                 ReplaceText(doc, origin, changed);
         }
+
+        /// <summary>
+        /// 指定フォルダ配下のファイルすべてに、文字列置換を行います。
+        /// サブフォルダすべてを再帰的に処理します。
+        /// </summary>
+        /// <param name="folderId">最上位のフォルダIDを指定します。</param>
+        /// <param name="origin">置換される文字列を指定します。</param>
+        /// <param name="changed">置換後の文字列を指定します。</param>
+        public static void BatchReplaceRecursively(string folderId, string origin, string changed, Action<string, string> onReplaced)
+        {
+            var files = GoogleDrive.GoogleDriveInternal.ListFiles(folderId);
+            var docs = files.Where(f => f.MimeType == Satrex.GoogleDrive.GoogleDriveInternal.GOOGLE_MYMETYPE_DOCS)
+                        .Select(f =>
+                        {
+                            System.Threading.Thread.Sleep(1100);
+                            return GoogleDocs.GoogleDocsInternal.GetDocument(f.Id);
+                        });
+            foreach(var doc in docs)
+            {
+                System.Threading.Thread.Sleep(1100);
+                ReplaceText(doc, origin, changed);
+                if(onReplaced != null)
+                    onReplaced(doc.DocumentId, doc.Title);
+            }
+
+            var folders = files.Where(f => f.MimeType == GoogleDrive.GoogleDriveInternal.GOOGLE_MYMETYPE_FOLDER);
+            foreach(var folder in folders)
+            {
+                BatchReplaceRecursively(folder.Id, origin, changed, onReplaced);
+            }
+        }
+
 
         // public static string ExportToPdf(string documentId)
         // {
