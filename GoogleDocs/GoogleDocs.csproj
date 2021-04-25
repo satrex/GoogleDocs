@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Apis.Docs.v1" Version="1.49.0.2041" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Secrets\client_secret.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\GoogleDrive\GoogleDrive\GoogleDrive.csproj" />
+  </ItemGroup>
+</Project>
